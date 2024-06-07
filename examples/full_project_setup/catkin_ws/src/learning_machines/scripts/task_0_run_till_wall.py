@@ -25,8 +25,8 @@ if __name__ == "__main__":
         print('proximity:', dist)
         if dist >= threshold_val:
             break
-        
-    # rob.sleep(3)
+    if isinstance(rob, HardwareRobobo):
+        rob.sleep(3)
     print('done')
     # rob.block()
     
