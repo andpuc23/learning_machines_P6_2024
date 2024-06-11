@@ -1,26 +1,32 @@
 import sys
 from robobo_interface import SimulationRobobo, HardwareRobobo
 from task1_model import Model
-from collections import Counter
+from collections import deque
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
+import torch.optim as optim
 
 
 action_space = ['move_forward', 'move_backward', 'turn_left', 'turn_right']
-num_episodes = 10_000
-collision_threshold = 150
-training = False
+num_episodes = 10_000 
+collision_threshold = 100 # sensor reading to stop episode for collision
+print_every = 10 # print results and save every X episodes
+training = True
+max_time = 100 # max number of actions per episode
+gamma = 0.9 # discount factor
 
 
 def do_action(rob, action_idx, action_space):
     action = action_space[action_idx]
     if action == 'move_forward':
-        rob.move_blocking(25, 25, 150)
+        rob.move_blocking(25, 25, 250)
     elif action == 'move_backward':
-        rob.move_blocking(-25, -25, 150)
+        rob.move_blocking(-25, -25, 250)
     elif action == 'turn_left':
-        rob.move_blocking(-25, 25, 150)
+        rob.move_blocking(-25, 25, 250)
     elif action == 'turn_right':
-        rob.move_blocking(25, -25, 150)
+        rob.move_blocking(25, -25, 250)
     else:
         print('unknown action:', action_idx)
 
@@ -42,11 +48,6 @@ def target_function(rob, action):
         return 0.5 
 
 
-def get_accumulated_reward(buffer):
-    counts = Counter(buffer)
-    return counts[0] + 0.3*counts[1] + 0.5*(counts[2]+counts[3])
-
-
 if __name__ == "__main__":
     if sys.argv[1] == "--hardware":
         rob = HardwareRobobo(camera=True)
@@ -66,34 +67,69 @@ if __name__ == "__main__":
 
     model = Model(training, action_space)
     if training:
-        accumulated_rewards = []
-        for episode in range(1, num_episodes):
-            buffer = []
+
+        optimizer = optim.Adam(model.parameters(), lr=0.01)
+        scores_deque = deque(maxlen=print_every)
+        scores = []
+        init_position = rob.position()
+        init_orientation = rob.read_orientation()
+
+        for episode in range(1, num_episodes+1):
+            rewards = []
+            saved_logprobs = []
             if isinstance(rob, SimulationRobobo):
                 rob.play_simulation()
-            while not collided(rob):
-                observation = rob.read_irs()
-                action = model.predict(observation)
-                do_action(rob, action, action_space)
-                buffer.append(action)
-                reward = target_function(rob, action)
-                # model.backward somewhere here
-                if reward == -100:
-                    accumulated_rewards.append(get_accumulated_reward(buffer))
-                    if isinstance(rob, SimulationRobobo):
-                        rob.stop_simulation()
+            observation = rob.read_irs()
+            for t in range(max_time):
+                action_i, proba = model.predict(observation)
+                saved_logprobs.append(proba)
+
+                do_action(rob, action_i, action_space)
+
+                observation, reward, done = \
+                    rob.read_irs(), target_function(rob, action_i), collided(rob)
+                
+                if done:
+                    rob.stop_simulation()
+                    rob.set_position(init_position, init_orientation)
+                    rob.play_simulation()
                     break
-            if episode % 100 == 0:
-                print(accumulated_rewards[-100].sum()/100)
-                plt.scatter(range(len(accumulated_rewards)), accumulated_rewards)
-                plt.title('Rewards per episode')
-                plt.savefig('/root/result/figures/task1.png')
+                rewards.append(reward)
+
+            rob.stop_simulation()
+            scores_deque.append(sum(rewards))
+            scores.append(sum(rewards))
+            
+            returns = deque(maxlen=max_time)
+            n_steps = len(rewards)
+
+            for t in range(n_steps)[::-1]:
+                dicounted_return_t = returns[0] if returns else 0
+                returns.appendleft(gamma*dicounted_return_t + rewards[t])
+            
+            eps = np.finfo(np.float32).eps.item()
+
+            returns = torch.tensor(returns)
+            returns = (returns - returns.mean()) / (returns.std() + eps)
+            policy_loss = []
+
+            for log_prob, dicounted_return in zip(saved_logprobs, returns):
+                policy_loss.append(-log_prob*dicounted_return)
+            policy_loss = torch.cat(policy_loss).sum()
+
+            optimizer.zero_grad()
+            policy_loss.backward()
+            optimizer.step()
+
+            if episode % print_every == 0: 
+                # todo plot graphs
+                print(f'Episode {episode}\tAverage Score: {np.mean(scores_deque):.2f}')
                 model.save_checkpoint(f'/root/results/task1_checkpoint_{episode}.pth')
 
     else:
         while not collided(rob):
             observation = rob.read_irs()
-            action = model.predict(observation)
+            action, _ = model.predict(observation)
             do_action(rob, action, action_space)
 
 

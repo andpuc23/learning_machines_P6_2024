@@ -3,8 +3,10 @@ class Model:
                  action_space:list):
         pass
 
-    def predict(self, observation) -> int:
+    def predict(self, observation) -> tuple(int, float):
+        # predicts the action and outputs (action, probability of action)
         pass
+
 
     def save_checkpoint(self):
         pass
