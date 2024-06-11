@@ -1,6 +1,7 @@
+#!/usr/bin/env python3
 import sys
 from robobo_interface import SimulationRobobo, HardwareRobobo
-from task1_model import Model
+from task_1_model import Model
 from collections import deque
 import matplotlib.pyplot as plt
 import numpy as np
@@ -65,9 +66,11 @@ if __name__ == "__main__":
 
     print(f'running {"training" if training else "inference"} in {"real world" if isinstance(rob, HardwareRobobo)else "simulation"}')
 
+    if training and isinstance(rob, HardwareRobobo):
+        raise ValueError('Cannot train in real life!')
+
     model = Model(training, action_space)
     if training:
-
         optimizer = optim.Adam(model.parameters(), lr=0.01)
         scores_deque = deque(maxlen=print_every)
         scores = []
@@ -86,8 +89,7 @@ if __name__ == "__main__":
 
                 do_action(rob, action_i, action_space)
 
-                observation, reward, done = \
-                    rob.read_irs(), target_function(rob, action_i), collided(rob)
+                observation, reward, done = rob.read_irs(), target_function(rob, action_i), collided(rob)
                 
                 if done:
                     rob.stop_simulation()
@@ -121,10 +123,13 @@ if __name__ == "__main__":
             policy_loss.backward()
             optimizer.step()
 
-            if episode % print_every == 0: 
-                # todo plot graphs
+            if episode % print_every == 0:
                 print(f'Episode {episode}\tAverage Score: {np.mean(scores_deque):.2f}')
                 model.save_checkpoint(f'/root/results/task1_checkpoint_{episode}.pth')
+                
+                plt.plot(len(scores), scores)
+                plt.title('Score per training episode')
+                plt.savefig('/root/results/figures/task1.png')
 
     else:
         while not collided(rob):
