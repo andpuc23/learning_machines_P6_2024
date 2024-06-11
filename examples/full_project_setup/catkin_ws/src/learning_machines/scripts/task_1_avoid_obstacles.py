@@ -1,33 +1,33 @@
 #!/usr/bin/env python3
 import sys
 from robobo_interface import SimulationRobobo, HardwareRobobo
-from task_1_model import Model
-from collections import deque
+from task_1_model import Model, ReplayMemory, optimize_model, tau, select_action
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.optim as optim
+from tqdm import trange
+from itertools import count
 
 
 action_space = ['move_forward', 'move_backward', 'turn_left', 'turn_right']
-num_episodes = 10_000 
-collision_threshold = 100 # sensor reading to stop episode for collision
-print_every = 10 # print results and save every X episodes
+num_episodes = 1000 
+collision_threshold = 150 # sensor reading to stop episode for collision
+print_every = 50 # print results and save every X episodes
 training = True
-max_time = 100 # max number of actions per episode
-gamma = 0.9 # discount factor
+max_time = 200 # max number of actions per episode
 
 
 def do_action(rob, action_idx, action_space):
     action = action_space[action_idx]
     if action == 'move_forward':
-        rob.move_blocking(25, 25, 250)
+        rob.move_blocking(20, 20, 200)
     elif action == 'move_backward':
-        rob.move_blocking(-25, -25, 250)
+        rob.move_blocking(-20, -20, 200)
     elif action == 'turn_left':
-        rob.move_blocking(-25, 25, 250)
+        rob.move_blocking(-20, 20, 200)
     elif action == 'turn_right':
-        rob.move_blocking(25, -25, 250)
+        rob.move_blocking(20, -20, 200)
     else:
         print('unknown action:', action_idx)
 
@@ -54,6 +54,7 @@ if __name__ == "__main__":
         rob = HardwareRobobo(camera=True)
     elif sys.argv[1] == "--simulation":
         rob = SimulationRobobo()
+        rob.play_simulation()
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument, --simulation or --hardware expected.")
     
@@ -69,69 +70,74 @@ if __name__ == "__main__":
     if training and isinstance(rob, HardwareRobobo):
         raise ValueError('Cannot train in real life!')
 
-    model = Model(training, action_space)
+    init_pos = rob.get_position()
+    init_rot = rob.read_orientation()
     if training:
-        optimizer = optim.Adam(model.parameters(), lr=0.01)
-        scores_deque = deque(maxlen=print_every)
+        policy_net = Model(action_space)
+        target_net = Model(action_space)
+        
+        policy_net.load_state_dict(torch.load('/root/results/task1_checkpoint_1000.pth'))
+        target_net.load_state_dict(policy_net.state_dict())
+
+        
+
+        optimizer = optim.AdamW(policy_net.parameters(), lr=1e-3, amsgrad=True)
+        memory = ReplayMemory(10000)
         scores = []
-        init_position = rob.position()
-        init_orientation = rob.read_orientation()
 
-        for episode in range(1, num_episodes+1):
-            rewards = []
-            saved_logprobs = []
-            if isinstance(rob, SimulationRobobo):
-                rob.play_simulation()
-            observation = rob.read_irs()
-            for t in range(max_time):
-                action_i, proba = model.predict(observation)
-                saved_logprobs.append(proba)
 
-                do_action(rob, action_i, action_space)
+        for i_episode in trange(num_episodes):
+            rob.set_position(init_pos, init_rot)
+            rob.play_simulation()
 
-                observation, reward, done = rob.read_irs(), target_function(rob, action_i), collided(rob)
-                
+            state = rob.read_irs()
+
+            state = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
+            for t in count():
+                action = select_action(policy_net, state, t)
+                do_action(rob, action, action_space)
+                observation, reward, terminated = rob.read_irs(), target_function(rob, action), collided(rob)
+                reward = torch.tensor([reward])
+                done = terminated or t == max_time
+
+                if terminated:
+                    next_state = None
+                else:
+                    next_state = torch.tensor(observation, dtype=torch.float32).unsqueeze(0)
+
+                memory.push(state, action, next_state, reward)
+
+                state = next_state
+
+                optimize_model(memory, policy_net, target_net, optimizer)
+
+                target_net_state_dict = target_net.state_dict()
+                policy_net_state_dict = policy_net.state_dict()
+                for key in policy_net_state_dict:
+                    target_net_state_dict[key] = policy_net_state_dict[key]*tau + target_net_state_dict[key]*(1-tau)
+                target_net.load_state_dict(target_net_state_dict)
+
                 if done:
+                    scores.append(t + 1)
                     rob.stop_simulation()
-                    rob.set_position(init_position, init_orientation)
-                    rob.play_simulation()
                     break
-                rewards.append(reward)
 
-            rob.stop_simulation()
-            scores_deque.append(sum(rewards))
-            scores.append(sum(rewards))
-            
-            returns = deque(maxlen=max_time)
-            n_steps = len(rewards)
 
-            for t in range(n_steps)[::-1]:
-                dicounted_return_t = returns[0] if returns else 0
-                returns.appendleft(gamma*dicounted_return_t + rewards[t])
-            
-            eps = np.finfo(np.float32).eps.item()
-
-            returns = torch.tensor(returns)
-            returns = (returns - returns.mean()) / (returns.std() + eps)
-            policy_loss = []
-
-            for log_prob, dicounted_return in zip(saved_logprobs, returns):
-                policy_loss.append(-log_prob*dicounted_return)
-            policy_loss = torch.cat(policy_loss).sum()
-
-            optimizer.zero_grad()
-            policy_loss.backward()
-            optimizer.step()
-
-            if episode % print_every == 0:
-                print(f'Episode {episode}\tAverage Score: {np.mean(scores_deque):.2f}')
-                model.save_checkpoint(f'/root/results/task1_checkpoint_{episode}.pth')
+            if i_episode % print_every == 0:
+                print(f'Episode {i_episode}\tLast Score: {scores[-1]})')
+                policy_net.save_checkpoint(f'/root/results/task1_checkpoint_{i_episode}.pth')
                 
-                plt.plot(len(scores), scores)
+                plt.plot(range(len(scores)), scores)
                 plt.title('Score per training episode')
                 plt.savefig('/root/results/figures/task1.png')
 
+
+
+
+
     else:
+        model = Model(action_space)
+        model.load_state_dict(torch.load('/root/results/task1_checkpoint_10000.pth'))
         while not collided(rob):
             observation = rob.read_irs()
             action, _ = model.predict(observation)
