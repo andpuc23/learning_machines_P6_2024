@@ -76,7 +76,7 @@ if __name__ == "__main__":
         policy_net = Model(action_space)
         target_net = Model(action_space)
         
-        policy_net.load_state_dict(torch.load('/root/results/task1_checkpoint_1000.pth'))
+        # policy_net.load_state_dict(torch.load('/root/results/task1_checkpoint_1000.pth'))
         target_net.load_state_dict(policy_net.state_dict())
 
         
@@ -87,7 +87,7 @@ if __name__ == "__main__":
 
 
         for i_episode in trange(num_episodes):
-            rob.set_position(init_pos, init_rot)
+            # rob.set_position(init_pos, init_rot)
             rob.play_simulation()
 
             state = rob.read_irs()
