@@ -42,7 +42,7 @@ class Model(nn.Module):
         
 
 batch_size = 100
-gamma = 0.7
+gamma = 0.5
 tau = 0.9
 eps_start = 0.9
 eps_end = 0.05
@@ -98,7 +98,6 @@ def optimize_model(memory, policy_net, target_net, optimizer):
 def select_action(policy_net, state, steps_done):
     sample = random.random()
     eps_threshold = eps_end + (eps_start - eps_end) * math.exp(-1. * steps_done / eps_decay)
-    steps_done += 1
     if sample > eps_threshold:
         with torch.no_grad():
             return policy_net(state).max(1).indices.view(1, 1)
