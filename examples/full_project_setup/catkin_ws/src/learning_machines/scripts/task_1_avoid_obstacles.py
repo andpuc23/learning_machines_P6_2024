@@ -12,7 +12,7 @@ from itertools import count
 
 action_space = ['move_forward', 'move_backward', 'turn_left', 'turn_right']
 num_episodes = 1000 
-collision_threshold = 150 # sensor reading to stop episode for collision
+collision_threshold = 100 # sensor reading to stop episode for collision
 print_every = 50 # print results and save every X episodes
 training = True
 max_time = 200 # max number of actions per episode
@@ -23,13 +23,13 @@ torch.manual_seed(0xC0FFEE)
 def do_action(rob, action_idx, action_space):
     action = action_space[action_idx]
     if action == 'move_forward':
-        rob.move_blocking(20, 20, 200)
+        rob.move_blocking(20, 20, 400)
     elif action == 'move_backward':
-        rob.move_blocking(-20, -20, 200)
+        rob.move_blocking(-20, -20, 400)
     elif action == 'turn_left':
-        rob.move_blocking(-20, 20, 200)
+        rob.move_blocking(-20, 20, 400)
     elif action == 'turn_right':
-        rob.move_blocking(20, -20, 200)
+        rob.move_blocking(20, -20, 400)
     else:
         print('unknown action:', action_idx)
 
@@ -38,15 +38,13 @@ def collided(rob) -> bool:
     return any([r > collision_threshold for r in rob.read_irs()])
 
 
-def target_function(rob, action):
+def target_function(action):
     # we encourage robot to move forward, but also ok with other actions
     # a thing here is that he may go forward-backward all the time
-    if collided(rob):
-        return -100
     if action == 0:
         return 1
     if action == 1:
-        return 0.3
+        return 0.1
     if action == 2 or action == 3:
         return 0.5 
 
@@ -72,8 +70,6 @@ if __name__ == "__main__":
     if training and isinstance(rob, HardwareRobobo):
         raise ValueError('Cannot train in real life!')
 
-    init_pos = rob.get_position()
-    init_rot = rob.read_orientation()
     if training:
         policy_net = Model(action_space)
         target_net = Model(action_space)
@@ -87,27 +83,26 @@ if __name__ == "__main__":
 
 
         for i_episode in trange(200, num_episodes):
-            # rob.set_position(init_pos, init_rot)
             rob.play_simulation()
 
-            state = rob.read_irs()
+            observation = rob.read_irs()
 
-            state = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
+            observation = torch.tensor(observation, dtype=torch.float32).unsqueeze(0)
             for t in count():
-                action = select_action(policy_net, state, i_episode)
+                action = select_action(policy_net, observation, i_episode)
                 do_action(rob, action, action_space)
-                observation, reward, terminated = rob.read_irs(), target_function(rob, action), collided(rob)
+                observation, reward, terminated = rob.read_irs(), target_function(action), collided(rob)
                 reward = torch.tensor([reward])
                 done = terminated or t == max_time
 
                 if terminated:
-                    next_state = None
+                    next_obs = None
                 else:
-                    next_state = torch.tensor(observation, dtype=torch.float32).unsqueeze(0)
+                    next_obs = torch.tensor(observation, dtype=torch.float32).unsqueeze(0)
 
-                memory.push(state, action, next_state, reward)
+                memory.push(observation, action, next_obs, reward)
 
-                state = next_state
+                observation = next_obs
 
                 optimize_model(memory, policy_net, target_net, optimizer)
 
@@ -134,10 +129,11 @@ if __name__ == "__main__":
 
     else:
         model = Model(action_space)
-        # model.load_state_dict(torch.load('/root/results/task1_checkpoint_300.pth'))
+        model.load_state_dict(torch.load('/root/results/task1_checkpoint_550.pth'))
         ep_len = 0
         while not collided(rob):
             observation = rob.read_irs()
+            print([int(o) for o in observation])
             action = model.predict(observation)
             do_action(rob, action, action_space)
             ep_len += 1

@@ -13,12 +13,14 @@ device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 class Model(nn.Module):
     def __init__(self, action_space):
         super(Model, self).__init__()
-        self.fc1 = nn.Linear(8, 16)
-        self.fc2 = nn.Linear(16, len(action_space))
+        self.fc1 = nn.Linear(8, 64)
+        self.fc2 = nn.Linear(64, 16)
+        self.fc3 = nn.Linear(16, len(action_space))
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
-        x = self.fc2(x)
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
         return F.softmax(x, dim=1)
         
 
@@ -83,7 +85,7 @@ def optimize_model(memory, policy_net, target_net, optimizer):
     with torch.no_grad():
         next_state_values[non_final_mask] = target_net(non_final_next_states).max(1).values
 
-    expected_state_action_values = (next_state_values * gamma) + reward_batch
+    expected_state_action_values = next_state_values*gamma + reward_batch
 
     criterion = nn.SmoothL1Loss()
     loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
