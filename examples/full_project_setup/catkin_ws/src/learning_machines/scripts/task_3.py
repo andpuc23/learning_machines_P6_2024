@@ -91,18 +91,53 @@ def train(rob):
 
 
 def run(rob):
-    model = Model()
-    model.load_state_dict(torch.load('/root/results/some_checkpoint_here.pth'))
+    q_table = np.zeros((1000, len(action_space)))  # Adjust the state space size as needed
+    learning_rate = 0.1
+    discount_factor = 0.9
+    epsilon = 1.0
+    epsilon_decay = 0.99
+    min_epsilon = 0.1
+    episodes = 1000
 
-    while True:
-        observation = get_observation(rob)
-        # print([int(o) for o in observation])
-        action = model.predict(observation)
-        do_action(rob, action, action_space)
-        ep_len += 1
+    for episode in range(episodes):
+        state = get_observation(rob)
+        state_idx = state_to_index(state)  # Function to convert state to index
+        total_cost = 0
+        
+        for step in range(1000):  # limiting the number of steps per episode
+            if random.uniform(0, 1) < epsilon:
+                action = random.randint(0, len(action_space) - 1)
+            else:
+                action = np.argmin(q_table[state_idx, :])
+            
+            do_action(rob, action, action_space)
+            next_state = get_observation(rob)
+            next_state_idx = state_to_index(next_state)
+            cost = cost_function(rob)
+            
+            # Update Q-values using cost function
+            best_next_action = np.argmin(q_table[next_state_idx, :])
+            td_target = cost + discount_factor * q_table[next_state_idx, best_next_action]
+            q_table[state_idx, action] += learning_rate * (td_target - q_table[state_idx, action])
+            
+            state_idx = next_state_idx
+            total_cost += cost
+            
+            if is_done(next_state):  # define your termination condition
+                break
+        
+        epsilon = max(min_epsilon, epsilon * epsilon_decay)
+        print(f"Episode {episode + 1}/{episodes}, Total Cost: {total_cost}")
 
-        print(ep_len)
+def state_to_index(state):
+    # Convert the state to a unique index
+    # This is a placeholder function; you need to implement a proper state indexing mechanism
+    return int(sum(state)) % 1000
 
+def is_done(state):
+    # Define your termination condition based on the state
+    # Placeholder condition:
+    return False
 
 if __name__ == "__main__":
     if sys.argv[1] == "--hardware":
@@ -120,14 +155,15 @@ if __name__ == "__main__":
     print('set simulator')
     print(sim.getObject('/Floor'))
     
-    # if sys.argv[2] == '--train':
-    #     training = True
-    # elif sys.argv[2] == '--test':
-    #     training = False
-    # else:
-    #     raise ValueError(f"{sys.argv[2]} is not a valid argument, --train or --test expected.")
+    if sys.argv[2] == '--train':
+        training = True
+    elif sys.argv[2] == '--test':
+        training = False
+    else:
+        raise ValueError(f"{sys.argv[2]} is not a valid argument, --train or --test expected.")
 
-    # if training:
-    #     train(rob)
-    # else:
-    #     run(rob)
+    if training:
+        train(rob)
+    else:
+        run(rob)
+    
