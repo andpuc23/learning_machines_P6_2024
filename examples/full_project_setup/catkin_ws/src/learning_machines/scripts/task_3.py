@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import sys
 from robobo_interface import SimulationRobobo, HardwareRobobo
+from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 from task_1_model import Model, ReplayMemory, optimize_model, tau, select_action
 import torch
 import cv2
 import numpy as np
 import random
+
 
 action_space = ['move_forward', 'move_backward', 'turn_left', 'turn_right']
 food_threshold_val = 20
@@ -71,11 +73,11 @@ def get_observation(rob) -> list:
 
 
 
-def _distance(rob, obj1, obj2) -> float:
+# def _distance(rob, obj1, obj2) -> float:
     pass
 
 
-def cost_function(rob):
+# def cost_function(rob):
     distance_rob_to_food = _distance(rob, rob, food)
     distance_food_to_base = _distance(rob, food, target)
     if distance_rob_to_food > food_threshold_val:
@@ -111,14 +113,21 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument, --simulation or --hardware expected.")
     
-    if sys.argv[2] == '--train':
-        training = True
-    elif sys.argv[2] == '--test':
-        training = False
-    else:
-        raise ValueError(f"{sys.argv[2]} is not a valid argument, --train or --test expected.")
+    print('start test script')
+    client = RemoteAPIClient(host="localhost", port=23000)
+    print('set client')
+    sim = client.require("sim")
+    print('set simulator')
+    print(sim.getObject('/Floor'))
+    
+    # if sys.argv[2] == '--train':
+    #     training = True
+    # elif sys.argv[2] == '--test':
+    #     training = False
+    # else:
+    #     raise ValueError(f"{sys.argv[2]} is not a valid argument, --train or --test expected.")
 
-    if training:
-        train(rob)
-    else:
-        run(rob)
+    # if training:
+    #     train(rob)
+    # else:
+    #     run(rob)
