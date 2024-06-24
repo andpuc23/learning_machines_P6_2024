@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from robobo_interface import SimulationRobobo, IRobobo
+from robobo_interface import SimulationRobobo, IRobobo, HardwareRobobo
 import numpy as np
 import torch
 import cv2
@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-S_SIZE = 12 # 10 numbers per observation: 8 irs sensors + number of target pixels in 4 quadrants
+S_SIZE = 12 # 12 numbers per observation: 8 irs sensors + number of target pixels in 4 quadrants
 A_SIZE = 4 # 4 actions - forward, right, left, back
 LAST_FOOD_COLLECTED:int = 0
 POSSIBLE_ACTIONS = ['move_forward', 'turn_right', 'turn_left', 'move_back']
@@ -41,33 +41,110 @@ def get_reward_for_food(rob:IRobobo, action):
         return 0
 
 
+
+# reward:
+#  if green -> normalized number of pixels + 1 0 -1 for action
+#   else no green -> 0 1 0
+#   if obstacle in front: normalised front sensors + 0 1 1
+#   if in back: norm back sensors + 1 0.5 -1
+
+
+
 def get_reward(rob, action, t):
+    """
+    if he sees the food -> go for it
+    otherwise:
+        if obstacle -> turn
+        no obstacle: go forward
+    """
     image = rob.get_image_front()
-    cv2.imwrite("/root/results/picture.jpeg", image) 
-
-    top_half = get_number_of_target_pixels(image[:image.shape[0]//2, :, :])
-    bottom_half = get_number_of_target_pixels(image[image.shape[0]//2:, :, :])
-
-    #pixels = get_number_of_target_pixels(image)
-    obstacles = (np.clip(max(rob.read_irs()), 0, 1000) / 1000)
-    food = get_reward_for_food(rob, action)
-
-    orient = rob.read_wheels()
-    ori = abs(orient.wheel_pos_l - orient.wheel_pos_r) / (100*(t+1))
+    image_px = image.shape[0]*image.shape[1]
+    total_target_px = get_number_of_target_pixels(image)
+    # top_half = get_number_of_target_pixels(image[:image.shape[0]//2, :, :])
+    # bottom_half = get_number_of_target_pixels(image[image.shape[0]//2:, :, :])
+    # left_half = get_number_of_target_pixels(image[:, :image.shape[1]//2, :])
+    # right_half = get_number_of_target_pixels(image[:, image.shape[1]//2:, :])
     
-    if food > 0:
-        reward = food
-    elif bottom_half+top_half < 0.1:
-        reward = -2 - ori
-    elif obstacles > 0.3:
-        reward = (-3 * obstacles) - ori
+    obs = rob.read_irs()
+    back_obst = [obs[0], obs[1], obs[6]]
+    front_obst = [*obs[2:6], obs[7]]
+    normalized_back_obstacles = np.clip(max(back_obst), 0, 1000) / 500
+    normalized_front_obstacles = np.clip(max(front_obst), 0, 1000) / 500
+
+    reward = 0
+    reward += get_reward_for_food(rob, action)
+
+    if total_target_px > 0.05*image_px:
+        reward += total_target_px/image_px * 10
+        if action == 0:
+            reward += 10
+        if action == 3:
+            reward += -1
     else:
-        reward = 2*top_half + bottom_half
-    
-    #reward -= ori
-
-    #print(t,"total food:", LAST_FOOD_COLLECTED, "pixels:", round(bottom_half,3), "food:", food, "obstacles:", round(obstacles,3), "ori:",round(ori,3), "reward:", round(reward,3))
+        if normalized_front_obstacles > 0.5 or normalized_back_obstacles > 0.5:
+            reward += -normalized_back_obstacles - normalized_front_obstacles
+            if 1 <= action <= 2:
+                reward += 1
+            if normalized_front_obstacles > 0.5:
+                if action == 1:
+                    reward += -1
+                else:
+                    reward += 1
+            if normalized_back_obstacles > 0.5:
+                if action == 1:
+                    reward += 1
+                else:
+                    reward += -1
     return reward
+
+# def get_reward(rob, action, t):
+#     image = rob.get_image_front()
+#     image_px = image.shape[0]*image.shape[1]
+#     total_target_px = get_number_of_target_pixels(image)
+#     top_half = get_number_of_target_pixels(image[:image.shape[0]//2, :, :])
+#     bottom_half = get_number_of_target_pixels(image[image.shape[0]//2:, :, :])
+#     left_half = get_number_of_target_pixels(image[:, :image.shape[1]//2, :])
+#     right_half = get_number_of_target_pixels(image[:, image.shape[1]//2:, :])
+
+#     obs = rob.read_irs()
+#     back_obst = [obs[0], obs[1], obs[6]]
+#     front_obst = [*obs[2:6], obs[7]]
+#     norm_back_obst = np.clip(max(back_obst), 0, 1000) / 500
+#     norm_front_obst = np.clip(max(front_obst), 0, 1000) / 500
+
+#     reward = 0.5 if action == 0 else 0
+#     reward += get_reward_for_food(rob, action)
+
+#     # targets
+#     if total_target_px > 0.05 * image_px:
+#         reward += total_target_px / image_px * 3
+#         reward += bottom_half / image_px * 10
+
+#         if action == 0: reward += 2
+#         if action == 4: reward += -1
+
+#         if left_half/right_half >=1.5:
+#             if action == 2: reward += 1
+#             if action == 1: reward += -1 
+#         elif right_half/left_half >= 1.5:
+#             if action == 2: reward += -1
+#             if action == 1: reward += 1 
+
+#     else:
+#         if 1 <= action <= 2:
+#             reward += 1
+    
+#     # obstacles
+#     if norm_front_obst > 0.25: # sensor value > 100
+#         reward += -norm_front_obst
+#         if action == 0:
+#             reward += -2
+#     if norm_back_obst > 0.5:
+#         reward += -norm_front_obst
+#         if action == 4:
+#             reward += -2
+
+#     return reward
 
 
 def get_number_of_tgt_px_quad(img):
@@ -91,9 +168,9 @@ def do_action(rob:IRobobo, action):
     if action == 'move_forward':
         block = rob.move(50, 50, 500)
     elif action == 'turn_right':
-        block = rob.move(20, -20, 250)
+        block = rob.move(20, -20, 500)
     elif action == 'turn_left':
-        block = rob.move(-20, 20, 250)
+        block = rob.move(-20, 20, 500)
     else:
         block = rob.move(-20, -20, 500)
     return block
@@ -133,10 +210,6 @@ def reset_food(rob):
 class PolicyGradientModel:
     def __init__(self, rob, hidden_size):
         self.rob = rob
-        # self.init_position = self.rob.get_position()
-        # self.init_orientation = self.rob.read_orientation()
-        # print('position', self.init_position)
-        # print('orientation', self.init_orientation)
         self.policy = Policy(S_SIZE, A_SIZE, hidden_size)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=0.01)
 
@@ -155,21 +228,15 @@ class PolicyGradientModel:
                 saved_log_probs.append(log_prob)
                 
                 block = do_action(self.rob, POSSIBLE_ACTIONS[action])
-                # state, reward, done = get_observation(self.rob)[0], get_reward(self.rob, t, action), get_simulation_done(self.rob)
-                #   get_reward_for_food(self.rob, action)+get_reward(self.rob, action),\
                 state, reward, done = get_observation(self.rob)[0], get_reward(self.rob, action, t), get_simulation_done(self.rob)
                 
                 if done:
-                    # self.rob.stop_simulation()
-                    # self.rob.set_position(self.init_position, self.init_orientation)
-                    # self.rob.play_simulation()
                     break
 
                 rewards.append(reward)
                 self.rob.is_blocked(block)
 
             self.rob.stop_simulation()
-            # self.rob.set_position(self.init_position, self.init_orientation)
             reset_food(self.rob)
             self.rob.play_simulation()
             self.rob.set_phone_tilt(110, 50)
@@ -219,53 +286,24 @@ class PolicyGradientModel:
         return POSSIBLE_ACTIONS[predicted_action], proba
 
 
-    def __evaluate_agent(env, max_steps, n_eval_episodes, policy):
-      """
-      Evaluate the agent for ``n_eval_episodes`` episodes and returns average reward and std of reward.
-     :param env: The evaluation environment
-      :param n_eval_episodes: Number of episode to evaluate the agent
-      :param policy: The Reinforce agent
-      """
-      episode_rewards = []
-      for episode in range(n_eval_episodes):
-        state = env.reset()
-        step = 0
-        done = False
-        total_rewards_ep = 0
-    
-        for step in range(max_steps):
-          action, _ = policy.act(state)
-          new_state, reward, done, info = env.step(action)
-          total_rewards_ep += reward
-        
-          if done:
-            break
-          state = new_state
-        episode_rewards.append(total_rewards_ep)
-      mean_reward = np.mean(episode_rewards)
-      std_reward = np.std(episode_rewards)
-
-      return mean_reward, std_reward
-
     def save_model(self, path):
-
-        if os.path.exists(path):
-            print(f"Policy gradient model save() WARN: file {path} exists, saving under {path.split('.')[0]}(1)")
+        # if os.path.exists(path):
+            # print(f"Policy gradient model save() WARN: file {path} exists, saving under {path.split('.')[0]}(1)")
         torch.save(self.policy.state_dict(), path)
         print(f"Policy gradient model save() INFO: saved under {path}")
 
 
 def train(rob:IRobobo):
     model = PolicyGradientModel(rob, 16)
-    # model.policy.load_state_dict(torch.load('/root/results/policy_5.pth'))
+    # model.policy.load_state_dict(torch.load('/root/results/go_forward_starting_position.pth'))
     print('INFO set up model, starting training')
     model.train(100, max_t=300, gamma=0.7, print_every=5)
-    model.save_model('./results/100_epochs.pth')
+    model.save_model('/root/results/100_epochs.pth')
 
 
 def run(rob:IRobobo):
     model = PolicyGradientModel(rob, 16)
-    # model.policy.load_state_dict(torch.load('/root/results/go_forward_starting_position.pth'))
+    model.policy.load_state_dict(torch.load('/root/results/go_forward_starting_position.pth'))
     print('INFO loaded model from checkpoint')
 
     reward = 0
@@ -289,13 +327,13 @@ def run_task_2(rob):
 
     rob.set_phone_tilt(110, 50)
     
-    train(rob)
-    #run(rob)
+    # train(rob)
+    run(rob)
 
     if isinstance(rob, SimulationRobobo):
         rob.stop_simulation()
 
 
 if __name__ == "__main__":
-    rob = SimulationRobobo()
+    rob = HardwareRobobo(camera=True)
     run_task_2(rob)
