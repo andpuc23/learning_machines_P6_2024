@@ -10,17 +10,6 @@ import random
 
 
 action_space = ['move_forward', 'move_backward', 'turn_left', 'turn_right']
-food_threshold_val = 20
-episode_length = 600
-learning_rate = 0.1
-discount_factor = 0.9
-epsilon = 1.0
-epsilon_decay = 0.99
-min_epsilon = 0.1
-episodes_num = 1000
-q_table_size = 1000
-rounding_value = 0.05
-state_shape = 10
 
 np.random.seed(0xC0FFEE)
 torch.manual_seed(0xC0FFEE)
@@ -85,14 +74,14 @@ def get_observation(rob) -> list:
 
 
 def _distance_to_food(rob) -> float:
-    rob_position = rob.get_position()[:2]
+    rob_position = [rob.get_position().x, rob.get_position().y]
     return np.sqrt((rob_position[0] + 3.65)**2 + (rob_position[1] - 0.825)**2)
 
 
 def _find_nearest(array, value):
         array = np.asarray(array)
         idx = (np.abs(array - value)).argmin()
-        diff = np.abs(array - value)[idx]
+        diff = np.abs(array - value)[idx].sum()
         return idx, diff
 
 def cost_function(rob):
@@ -100,6 +89,7 @@ def cost_function(rob):
 
 
 def state_to_index(state, states_list):
+    rounding_value = 0.05
     index_to_insert_into = np.argwhere(states_list == np.zeros((10)))
     
     rounded_obs = np.array([round(s / rounding_value) * rounding_value for s in state])
@@ -114,12 +104,23 @@ def state_to_index(state, states_list):
 
 
 def is_done(state):
+    food_threshold_val = 20
     return _distance_to_food(rob) < food_threshold_val
 
 
 def train(rob):
+    episode_length = 600
+    learning_rate = 0.1
+    discount_factor = 0.9
+    epsilon = 1.0
+    epsilon_decay = 0.99
+    min_epsilon = 0.1
+    episodes_num = 1000
+    q_table_size = 1000
+    state_shape = 10
+
     q_table = np.zeros((q_table_size, len(action_space)))  # Adjust the state space size as needed
-    rounded_states_list = np.zeros((q_table_size, rob.get_observation()))
+    rounded_states_list = np.zeros((q_table_size, state_shape))
 
     for episode in range(episodes_num):
         state = get_observation(rob)
@@ -134,7 +135,7 @@ def train(rob):
             
             do_action(rob, action, action_space)
             next_state = get_observation(rob)
-            next_state_idx = state_to_index(next_state)
+            next_state_idx = state_to_index(next_state, rounded_states_list)
             cost = cost_function(rob)
             
             # Update Q-values using cost function
@@ -177,21 +178,21 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument, --simulation or --hardware expected.")
     
-    print('start test script')
-    client = RemoteAPIClient(host="localhost", port=23000)
-    print('set client')
-    sim = client.require("sim")
-    print('set simulator')
-    print(sim.getObject('/Floor'))
+    # print('start test script')
+    # client = RemoteAPIClient(host="localhost", port=23000)
+    # print('set client')
+    # sim = client.require("sim")
+    # print('set simulator')
+    # print(sim.getObject('/Floor'))
     
-    # if sys.argv[2] == '--train':
-    #     training = True
-    # elif sys.argv[2] == '--test':
-    #     training = False
-    # else:
-    #     raise ValueError(f"{sys.argv[2]} is not a valid argument, --train or --test expected.")
+    if sys.argv[2] == '--train':
+        training = True
+    elif sys.argv[2] == '--test':
+        training = False
+    else:
+        raise ValueError(f"{sys.argv[2]} is not a valid argument, --train or --test expected.")
 
-    # if training:
-    #     train(rob)
-    # else:
-    #     run(rob)
+    if training:
+        train(rob)
+    else:
+        run(rob)
