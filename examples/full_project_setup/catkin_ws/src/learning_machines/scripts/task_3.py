@@ -68,20 +68,23 @@ def get_observation(rob) -> list:
     irs = rob.read_irs()
     irs = [irs[6], irs[4], irs[7], irs[5]] # backC, frontC, frontLL, frontRR
     img = rob.get_image_front()
-    pixels = get_img_sectors_colors()
+    pixels = get_img_sectors_colors(img)
     return irs + list(pixels)
 
 
 
-# def _distance(rob, obj1, obj2) -> float:
-    pass
+def _distance(rob, obj1, obj2) -> float:
+    pos1 = rob._sim.getObjectPosition(obj1, rob._sim.handle_world)
+    pos2 = rob._sim.getObjectPosition(obj2, rob._sim.handle_world)
+
+    return np.sqrt((pos1[0]-pos2[0])**2 + (pos1[1] - pos2[1])**2)
 
 
-# def cost_function(rob):
+def cost_function(rob):
     distance_rob_to_food = _distance(rob, rob, food)
     distance_food_to_base = _distance(rob, food, target)
     if distance_rob_to_food > food_threshold_val:
-        return distance_rob_to_food + 100 # should be much (x2, x3) higher than distance_food_to_base
+        return distance_rob_to_food + 10 # starting dist is 1.325...
     else:
         return distance_rob_to_food + distance_food_to_base
 
@@ -148,12 +151,9 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument, --simulation or --hardware expected.")
     
-    print('start test script')
-    client = RemoteAPIClient(host="localhost", port=23000)
-    print('set client')
-    sim = client.require("sim")
-    print('set simulator')
-    print(sim.getObject('/Floor'))
+    
+    food = rob._sim.getObject('/Food')
+    target = rob._sim.getObject('/Base')
     
     if sys.argv[2] == '--train':
         training = True
