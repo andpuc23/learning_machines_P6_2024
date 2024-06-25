@@ -132,15 +132,32 @@ def run(rob):
         epsilon = max(min_epsilon, epsilon * epsilon_decay)
         print(f"Episode {episode + 1}/{episodes}, Total Cost: {total_cost}")
 
-def state_to_index(state):
-    # Convert the state to a unique index
-    # This is a placeholder function; you need to implement a proper state indexing mechanism
-    return int(sum(state)) % 1000
+def _find_nearest(array, value):
+        array = np.asarray(array)
+        idx = (np.abs(array - value)).argmin()
+        diff = np.abs(array - value)[idx].sum()
+        return idx, diff
+
+
+def state_to_index(state, states_list):
+    rounding_value = 0.05
+    index_to_insert_into = np.argwhere(states_list == np.zeros((10)))
+    
+    rounded_obs = np.array([round(s / rounding_value) * rounding_value for s in state])
+    index, delta = _find_nearest(states_list, rounded_obs)
+
+    if index_to_insert_into.shape[0] != 0 and delta > rounding_value*3:
+        states_list[index_to_insert_into, :] = rounded_obs
+        return index_to_insert_into
+    
+    return index
+        
+
 
 def is_done(state):
-    # Define your termination condition based on the state
-    # Placeholder condition:
-    return False
+    # todo rewrite this 
+    food_threshold_val = 20
+    return _distance_to_food(rob) < food_threshold_val
 
 if __name__ == "__main__":
     if sys.argv[1] == "--hardware":
