@@ -23,14 +23,12 @@ def get_number_of_green_pixels(img) -> float:
     count = np.count_nonzero(mask)
     return count / px_num
 
-
 def get_number_of_red_pixels(img) -> float:
     blue, green, red = cv2.split(img)
     px_num = blue.shape[0]*blue.shape[1]
     mask = (red > blue+10) & (red > green+10)
     count = np.count_nonzero(mask)
     return count / px_num
-
 
 def get_img_sectors_colors(img)->tuple:
     left = img[:img.shape[0]//3, :, :]
@@ -44,7 +42,6 @@ def get_img_sectors_colors(img)->tuple:
     red_right = get_number_of_red_pixels(right)
     return green_left, green_center, green_right, red_left, red_center, red_right
 
-
 def do_action(rob, action_idx, action_space):
     action = action_space[action_idx]
     if action == 'move_forward':
@@ -57,7 +54,6 @@ def do_action(rob, action_idx, action_space):
         rob.move_blocking(20, -20, 400)
     else:
         print('unknown action:', action_idx)
-
 
 def get_observation(rob) -> list:
     """
@@ -80,9 +76,7 @@ def _distance_rob_to_obj(rob, obj) -> float:
 def _distance(rob, obj1, obj2) -> float:
     pos1 = rob._sim.getObjectPosition(obj1, rob._sim.handle_world)
     pos2 = rob._sim.getObjectPosition(obj2, rob._sim.handle_world)
-
     return np.sqrt((pos1[0]-pos2[0])**2 + (pos1[1] - pos2[1])**2)
-
 
 def cost_function(rob):
     distance_rob_to_food = _distance_rob_to_obj(rob, food)
@@ -91,7 +85,6 @@ def cost_function(rob):
         return distance_rob_to_food + 10 # starting dist is 1.325...
     else:
         return distance_rob_to_food + distance_food_to_base
-
 
 def train(rob):
     episode_length = 600
@@ -139,7 +132,6 @@ def train(rob):
 
     np.savez('/root/results/qtable', q_table)
 
-
 def run(rob):
     q_table = np.load('/root/results/qtable.npz')['arr_0']
     q_table_size = 1000
@@ -153,30 +145,29 @@ def run(rob):
         do_action(rob, action, action_space)
 
 def _find_nearest(array, value):
-        array = np.asarray(array)
-        idx = (np.abs(array - value)).argmin()
-        diff = np.abs(array - value)[idx].sum()
-        return idx, diff
-
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    diff = np.abs(array - value)[idx].sum()
+    return idx, diff
 
 def state_to_index(state, states_list):
     rounding_value = 0.05
-    index_to_insert_into = np.argwhere(states_list == np.zeros((10)))
-    
     rounded_obs = np.array([round(s / rounding_value) * rounding_value for s in state])
     index, delta = _find_nearest(states_list, rounded_obs)
 
-    if index_to_insert_into.shape[0] != 0 and delta > rounding_value*3:
-        states_list[index_to_insert_into, :] = rounded_obs
-        return index_to_insert_into
+    if np.all(states_list[index] == 0) and np.all(rounded_obs != 0):
+        states_list[index] = rounded_obs
+        return index
+    
+    if delta > rounding_value * 3:
+        index = (states_list == 0).all(axis=1).argmax()
+        states_list[index] = rounded_obs
     
     return index
 
 def is_done(state):
-    # todo rewrite this 
     food_threshold_val = 20
     return _distance_rob_to_obj(rob, food) < food_threshold_val
-
 
 if __name__ == "__main__":
     if sys.argv[1] == "--hardware":
@@ -186,7 +177,6 @@ if __name__ == "__main__":
         rob.play_simulation()
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument, --simulation or --hardware expected.")
-    
     
     food = rob._sim.getObject('/Food')
     target = rob._sim.getObject('/Base')
@@ -202,4 +192,3 @@ if __name__ == "__main__":
         train(rob)
     else:
         run(rob)
-    
