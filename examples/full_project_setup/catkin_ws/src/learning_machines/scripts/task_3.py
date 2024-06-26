@@ -71,7 +71,11 @@ def get_observation(rob) -> list:
     pixels = get_img_sectors_colors(img)
     return irs + list(pixels)
 
-
+def _distance_rob_to_obj(rob, obj) -> float:
+    rob_pos = rob.get_position()
+    rob_pos = [rob_pos.x, rob_pos.y]
+    obj_pos = rob._sim.getObjectPosition(obj, rob._sim.handle_world)
+    return np.sqrt((rob_pos[0]-obj_pos[0])**2 + (rob_pos[1] - obj_pos[1])**2)
 
 def _distance(rob, obj1, obj2) -> float:
     pos1 = rob._sim.getObjectPosition(obj1, rob._sim.handle_world)
@@ -81,7 +85,7 @@ def _distance(rob, obj1, obj2) -> float:
 
 
 def cost_function(rob):
-    distance_rob_to_food = _distance(rob, rob, food)
+    distance_rob_to_food = _distance_rob_to_obj(rob, food)
     distance_food_to_base = _distance(rob, food, target)
     if distance_rob_to_food > food_threshold_val:
         return distance_rob_to_food + 10 # starting dist is 1.325...
@@ -135,6 +139,7 @@ def train(rob):
 
     np.savez('/root/results/qtable', q_table)
 
+
 def run(rob):
     q_table = np.load('/root/results/qtable.npz')['arr_0']
     q_table_size = 1000
@@ -166,13 +171,12 @@ def state_to_index(state, states_list):
         return index_to_insert_into
     
     return index
-        
-
 
 def is_done(state):
     # todo rewrite this 
     food_threshold_val = 20
-    return _distance_to_food(rob) < food_threshold_val
+    return _distance_rob_to_obj(rob, food) < food_threshold_val
+
 
 if __name__ == "__main__":
     if sys.argv[1] == "--hardware":
@@ -186,7 +190,7 @@ if __name__ == "__main__":
     
     food = rob._sim.getObject('/Food')
     target = rob._sim.getObject('/Base')
-    
+
     if sys.argv[2] == '--train':
         training = True
     elif sys.argv[2] == '--test':
