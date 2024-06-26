@@ -12,7 +12,7 @@ export ROS_MASTER_URI="http://192.168.178.157:11311"
 
 # VU-Campusnet
 # export COPPELIA_SIM_IP="130.37.68.80"
-export COPPELIA_SIM_IP="130.37.68.88"
+export COPPELIA_SIM_IP="145.108.73.134"
 
 # Home
 # export COPPELIA_SIM_IP="192.168.178.158"
