@@ -102,7 +102,12 @@ def train(rob):
     q_table_size = 1000
     state_shape = 10
 
-    q_table = np.zeros((q_table_size, len(action_space)))  # Adjust the state space size as needed
+    try:
+        with np.load('/root/results/qtable.npz') as data:
+            q_table = data['arr_0']
+    except:
+        q_table = np.zeros((q_table_size, len(action_space)))  # Adjust the state space size as needed
+        
     rounded_states_list = np.zeros((q_table_size, state_shape))
 
     for episode in range(episodes_num):
