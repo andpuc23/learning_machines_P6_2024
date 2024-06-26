@@ -99,7 +99,7 @@ def train(rob):
     epsilon_decay = 0.99
     min_epsilon = 0.1
     episodes_num = 10
-    q_table_size = 10000
+    q_table_size = 1000
     state_shape = 10
 
     q_table = np.zeros((q_table_size, len(action_space)))  # Adjust the state space size as needed
