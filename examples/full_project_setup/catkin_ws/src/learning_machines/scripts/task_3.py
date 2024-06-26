@@ -90,24 +90,25 @@ def cost_function(rob):
 
 
 def train(rob):
-    pass
-
-
-def run(rob):
-    q_table = np.zeros((1000, len(action_space)))  # Adjust the state space size as needed
+    episode_length = 600
     learning_rate = 0.1
     discount_factor = 0.9
     epsilon = 1.0
     epsilon_decay = 0.99
     min_epsilon = 0.1
-    episodes = 1000
+    episodes_num = 1000
+    q_table_size = 1000
+    state_shape = 10
 
-    for episode in range(episodes):
+    q_table = np.zeros((q_table_size, len(action_space)))  # Adjust the state space size as needed
+    rounded_states_list = np.zeros((q_table_size, state_shape))
+
+    for episode in range(episodes_num):
         state = get_observation(rob)
-        state_idx = state_to_index(state)  # Function to convert state to index
+        state_idx = state_to_index(state, rounded_states_list)  # Function to convert state to index
         total_cost = 0
         
-        for step in range(1000):  # limiting the number of steps per episode
+        for _ in range(episode_length):
             if random.uniform(0, 1) < epsilon:
                 action = random.randint(0, len(action_space) - 1)
             else:
@@ -115,7 +116,7 @@ def run(rob):
             
             do_action(rob, action, action_space)
             next_state = get_observation(rob)
-            next_state_idx = state_to_index(next_state)
+            next_state_idx = state_to_index(next_state, rounded_states_list)
             cost = cost_function(rob)
             
             # Update Q-values using cost function
@@ -126,11 +127,25 @@ def run(rob):
             state_idx = next_state_idx
             total_cost += cost
             
-            if is_done(next_state):  # define your termination condition
+            if is_done(next_state):
                 break
         
         epsilon = max(min_epsilon, epsilon * epsilon_decay)
-        print(f"Episode {episode + 1}/{episodes}, Total Cost: {total_cost}")
+        print(f"Episode {episode + 1}/{episodes_num}, Total Cost: {total_cost}")
+
+    np.savez('/root/results/qtable', q_table)
+
+def run(rob):
+    q_table = np.load('/root/results/qtable.npz')['arr_0']
+    q_table_size = 1000
+    state_shape = 10
+    rounded_states_list = np.zeros((q_table_size, state_shape))
+
+    while True:
+        state = get_observation(rob)
+        state_idx = state_to_index(state, rounded_states_list)
+        action = np.argmin(q_table[state_idx, :])
+        do_action(rob, action, action_space)
 
 def _find_nearest(array, value):
         array = np.asarray(array)
